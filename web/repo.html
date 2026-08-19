@@ -123,9 +123,13 @@
 </header>
 
 <div class="installed" id="installedPanel">
-  <h2><span class="ok">✓</span> Installed into the game (IndexedDB)</h2>
-  <div class="empty" id="installedEmpty">Nothing installed yet — open a mod and press <b>Install</b>. The mod is stored in your browser and automatically injected into the game's <code>content</code> folder on the next game start.</div>
+  <h2 style="justify-content: space-between; flex-wrap: wrap;">
+    <span><span class="ok">✓</span> Installed into the game (IndexedDB)</span>
+    <button id="importBtn" class="btn ghost" type="button" style="font-size:12.5px; padding:6px 12px;">⬆ Import mod file…</button>
+  </h2>
+  <div class="empty" id="installedEmpty">Nothing installed yet — open a mod and press <b>Install</b>, or use <b>Import mod file…</b> to add a downloaded .zip. Installed mods are automatically injected into the game's <code>content</code> folder on the next game start.</div>
   <ul id="installedList"></ul>
+  <input type="file" id="importFile" accept=".zip" style="display:none">
 </div>
 
 <div class="controls">
@@ -142,11 +146,12 @@
 </div>
 
 <p class="hint">
-  Browsing the official Rigs of Rods repository (975+ resources). <b>Install</b> downloads the
-  mod file into your browser's <b>IndexedDB</b> and it is automatically injected into the game's
-  <code>content</code> folder when you start the game — no manual file handling. Mods installed this
-  way are available in the vehicle/map pickers (look for the mod's name or the default truck).
-  <b>Download</b> saves the file to your computer instead, if you prefer manual installation.
+  Browsing the official Rigs of Rods repository (975+ resources). <b>Install</b> tries to download
+  the mod file into your browser's <b>IndexedDB</b> so it is automatically injected into the game's
+  <code>content</code> folder on the next game start. Because the forum blocks direct in-browser
+  downloads (CORS), Install tries several public proxies — if they all fail it opens the direct
+  download in a new tab; just save the .zip and use <b>Import mod file…</b> above to add it. Mods
+  installed this way appear in the vehicle/map pickers in-game.
 </p>
 
 <!-- Details modal -->
@@ -266,6 +271,7 @@
     }).catch(function () {});
   }
   renderInstalled();
+  wireImport();
 
   // ================= Helpers =================
   function esc(s) {
@@ -289,7 +295,7 @@
   // directly; we try a chain of public CORS proxies. Each attempt times out.
   function fetchWithTimeout(url, ms) {
     var ctrl = new AbortController();
-    var timer = setTimeout(function () { ctrl.abort(); }, ms || 90000);
+    var timer = setTimeout(function () { ctrl.abort(); }, ms || 25000);
     return fetch(url, { signal: ctrl.signal }).then(function (r) {
       clearTimeout(timer);
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -302,7 +308,8 @@
       attempts = attempts.concat([
         'https://corsproxy.io/?url=' + encodeURIComponent(url),
         'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
-        'https://cors.eu.org/' + url
+        'https://api.cors.lol/?url=' + encodeURIComponent(url),
+        'https://test.cors.workers.dev/?url=' + encodeURIComponent(url)
       ]);
     }
     return attempts.reduce(function (chain, u) {
@@ -473,10 +480,52 @@
       renderInstalled();
     }).catch(function (err) {
       statusEl.className = 'status err';
-      statusEl.textContent = 'In-browser download failed (' + (err && err.message ? err.message : 'network/CORS') + ')';
+      statusEl.textContent = 'The forum blocks in-browser downloads (CORS). The download is opening in a new tab — save the .zip, then use “Import mod file…” above to add it.';
       btn.disabled = false;
       // Last resort: open the direct forum link (no CORS needed in a new tab).
       if (url) window.open(url, '_blank');
+    });
+  }
+
+  // ================= Import a local mod file (always works) =================
+  function importZipFile(file) {
+    return file.arrayBuffer().then(function (buf) {
+      var bytes = new Uint8Array(buf);
+      var ok = bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4B &&
+               (bytes[2] === 0x03 || bytes[2] === 0x05 || bytes[2] === 0x07);
+      if (!ok) throw new Error(file.name + ' is not a valid .zip archive');
+      return saveMod({
+        filename: file.name,
+        size: file.size,
+        data: file,           // Blob is fine here (game reads it as a Blob)
+        title: file.name,
+        resource_id: null,
+        installed_at: Date.now(),
+        imported: true
+      });
+    });
+  }
+  function wireImport() {
+    var btn = document.getElementById('importBtn');
+    var input = document.getElementById('importFile');
+    if (!btn || !input) return;
+    btn.addEventListener('click', function () { input.click(); });
+    input.addEventListener('change', function () {
+      var f = input.files && input.files[0];
+      if (!f) return;
+      btn.disabled = true;
+      btn.textContent = 'Importing…';
+      importZipFile(f).then(function () {
+        btn.disabled = false;
+        btn.textContent = 'Import mod file…';
+        input.value = '';
+        renderInstalled();
+      }).catch(function (e) {
+        btn.disabled = false;
+        btn.textContent = 'Import mod file…';
+        input.value = '';
+        alert(e && e.message ? e.message : 'Could not import that file');
+      });
     });
   }
 
