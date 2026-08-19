@@ -201,6 +201,17 @@
       box.style.display = 'block';
     }
 
+    // Readable version of an error/exception: prefer the stack trace (wasm
+    // exceptions carry the wasm stack there), then the message, else a string.
+    function describe(reason) {
+      if (reason == null) return 'Unknown error';
+      if (typeof reason === 'object') {
+        if (reason.stack) return String(reason.stack);
+        if (reason.message) return String(reason.message);
+      }
+      return String(reason);
+    }
+
     function isCritical(line) {
       return /(exception has occured|exception has occurred|InvalidStateException|RenderingAPIException|InternalErrorException|aborted|failed to preprocess|Failed to preprocess|WebAssembly|out of memory|SharedArrayBuffer|ReferenceError|TypeError|RangeError|RuntimeError|assertion failed)/i.test(line)
              && !/preparing texture/.test(line);
@@ -232,10 +243,14 @@
       if (isCritical(text)) showError(text);
     });
     window.addEventListener('unhandledrejection', function (e) {
-      var text = 'Unhandled promise rejection: ' + (e.reason && e.reason.message ? e.reason.message : e.reason);
+      var text = 'Unhandled promise rejection: ' + describe(e.reason);
       pushLog(text);
       if (isCritical(String(text))) showError(text);
     });
+
+    // Exposed so the boot gate (which waits for cross-origin isolation) can
+    // surface a readable failure through the same error box.
+    window.__rorShowError = showError;
 
     // Hook into the Emscripten Module so we see the game's stderr directly.
     var realModulePrintErr = null;
@@ -375,6 +390,12 @@
       console.warn('[RoRMods] FS not available; skipping injection');
       return;
     }
+    // The game's data package creates /content/ itself later in preRun; make
+    // sure it exists before we write mods into it (FS does not auto-create
+    // parent directories).
+    try {
+      if (Module.FS_createPath) Module.FS_createPath('/', 'content', true, true);
+    } catch (e) { /* already exists */ }
     var injected = 0;
     mods.forEach(function (m) {
       try {
@@ -387,7 +408,43 @@
     console.log('[RoRMods] injected ' + injected + ' installed mod(s) into /content/ — look for them in the game pickers');
   }
 </script>
-<script src="js/input.js"></script>
-<script src="RoR.js?v=4"></script>
+<script>
+  // ---- Game bootstrap: wait for cross-origin isolation (SharedArrayBuffer) ----
+  // The threaded build hard-requires an isolated context. coi-sw.js (loaded in
+  // <head>) exposes window.__coi, which resolves only once the page is isolated
+  // — reloading the page as needed so the service worker's COOP/COEP headers
+  // apply. The game scripts load ONLY after that, so the game can never boot
+  // into a broken (non-isolated) state, which is what caused the wasm crash on
+  // GitHub Pages (where headers come from the service worker).
+  (function () {
+    "use strict";
+    var hud = document.getElementById('hud');
+
+    function loadGameScripts() {
+      var input = document.createElement('script');
+      input.src = 'js/input.js';
+      document.body.appendChild(input);
+
+      var game = document.createElement('script');
+      game.src = 'RoR.js?v=' + BUILD;
+      document.body.appendChild(game);
+    }
+
+    function bootFailure(err) {
+      var msg = (err && err.message) ? err.message : String(err);
+      if (hud) hud.textContent = 'Game could not start: ' + msg;
+      if (window.__rorShowError) window.__rorShowError('Game could not start: ' + msg);
+      console.error('[boot] ' + msg);
+    }
+
+    if (window.__coi && typeof window.__coi.then === 'function') {
+      if (hud) hud.textContent = 'Preparing environment…';
+      window.__coi.then(loadGameScripts, bootFailure);
+    } else {
+      // coi-sw.js missing/unexpected — boot anyway; the game surfaces its own errors.
+      loadGameScripts();
+    }
+  })();
+</script>
 </body>
 </html>
