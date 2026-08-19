@@ -282,7 +282,15 @@
     // Runs after the game's data package is written into the virtual FS and
     // before main() scans /content/ — so installed mods from IndexedDB appear
     // in the game pickers exactly like the built-in agora.zip / dafsemi.zip.
-    preRun: [injectInstalledMods],
+    // Lazy lookup: injectInstalledMods is defined in a later script block, so
+    // referencing it here directly would throw at parse time.
+    preRun: [function () {
+      if (typeof window.injectInstalledMods === 'function') {
+        window.injectInstalledMods();
+      } else {
+        console.warn('[RoRMods] injector not loaded — game boots without installed mods');
+      }
+    }],
     // Cache-busting: the game server sends no cache headers, so without this the
     // browser keeps the old 9 MB wasm + 112 MB data from the previous deploy.
     locateFile: function (path) {
