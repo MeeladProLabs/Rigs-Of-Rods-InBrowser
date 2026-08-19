@@ -65,7 +65,7 @@
     <button id="fitBtn" type="button">⤡ Fit window</button>
     <a href="controls.html" target="_blank">Controls</a>
   </div>
-  <div id="buildTag">build 16</div>
+  <div id="buildTag">build 17</div>
 
   <!-- On-screen error reporting: the last error is shown here so you can read it
        directly or copy it (the full log can be huge and freeze chat windows). -->
@@ -281,7 +281,7 @@
 </script>
 
 <script>
-  var BUILD = 16;   // bump this with every game rebuild so the browser fetches fresh wasm/data
+  var BUILD = 17;   // bump this with every game rebuild so the browser fetches fresh wasm/data
   var Module = {
     canvas:   document.getElementById('canvas'),
     print:    function (t) { console.log(t); },
@@ -342,6 +342,25 @@
   // No installed mods -> the game boots exactly as before.
   (function () {
     window.__installedModFiles = [];
+    var resolveReady;
+    // The game bootstrap waits for this promise. Without the gate, the game can
+    // reach Module.preRun while IndexedDB is still reading, see an empty array,
+    // and permanently miss the installed map/vehicle.
+    window.__installedModsReady = new Promise(function (resolve) {
+      resolveReady = resolve;
+    });
+
+    function finish() {
+      console.log('[RoRMods] ' + window.__installedModFiles.length + ' installed mod(s) ready');
+      resolveReady();
+    }
+    function readBinary(data) {
+      if (data && typeof data.arrayBuffer === 'function') return data.arrayBuffer();
+      if (data instanceof ArrayBuffer) return Promise.resolve(data);
+      if (ArrayBuffer.isView(data)) return Promise.resolve(data.buffer);
+      return Promise.reject(new Error('stored file is not binary data'));
+    }
+
     try {
       var req = indexedDB.open('RoRMods', 1);
       req.onupgradeneeded = function () {
@@ -359,8 +378,8 @@
             var recs = all.result || [];
             var pending = [];
             recs.forEach(function (rec) {
-              if (!rec || !rec.filename || !(rec.data instanceof Blob)) return;
-              pending.push(rec.data.arrayBuffer().then(function (buf) {
+              if (!rec || !rec.filename || !rec.data) return;
+              pending.push(readBinary(rec.data).then(function (buf) {
                 var bytes = new Uint8Array(buf);
                 // Only accept real zip archives (PK magic) so a bad download
                 // can never break the game's content scanner.
@@ -371,16 +390,26 @@
                 } else {
                   console.warn('[RoRMods] skipped ' + rec.filename + ': not a zip archive');
                 }
-              }).catch(function () {}));
+              }).catch(function (err) {
+                console.warn('[RoRMods] skipped ' + rec.filename + ': ' + err);
+              }));
             });
-            Promise.all(pending).then(function () {
-              console.log('[RoRMods] ' + window.__installedModFiles.length + ' installed mod(s) ready');
-            });
+            Promise.all(pending).then(finish, finish);
           };
-        } catch (e) { console.warn('[RoRMods] read failed: ' + e); }
+          all.onerror = finish;
+        } catch (e) {
+          console.warn('[RoRMods] read failed: ' + e);
+          finish();
+        }
       };
-      req.onerror = function () { console.warn('[RoRMods] IndexedDB unavailable; game boots without installed mods'); };
-    } catch (e) { console.warn('[RoRMods] IndexedDB unavailable; game boots without installed mods'); }
+      req.onerror = function () {
+        console.warn('[RoRMods] IndexedDB unavailable; game boots without installed mods');
+        finish();
+      };
+    } catch (e) {
+      console.warn('[RoRMods] IndexedDB unavailable; game boots without installed mods');
+      finish();
+    }
   })();
 
   function injectInstalledMods() {
@@ -421,13 +450,20 @@
     var hud = document.getElementById('hud');
 
     function loadGameScripts() {
-      var input = document.createElement('script');
-      input.src = 'js/input.js';
-      document.body.appendChild(input);
+      var modsReady = window.__installedModsReady || Promise.resolve();
+      // Do not even evaluate RoR.js until the IndexedDB records have been read.
+      // RoR.js starts its data-package/runtime setup immediately, so waiting
+      // here is the reliable way to make the later preRun injection deterministic.
+      var timeout = new Promise(function (resolve) { setTimeout(resolve, 5000); });
+      Promise.race([modsReady, timeout]).then(function () {
+        var input = document.createElement('script');
+        input.src = 'js/input.js?v=' + BUILD;
+        document.body.appendChild(input);
 
-      var game = document.createElement('script');
-      game.src = 'RoR.js?v=' + BUILD;
-      document.body.appendChild(game);
+        var game = document.createElement('script');
+        game.src = 'RoR.js?v=' + BUILD;
+        document.body.appendChild(game);
+      });
     }
 
     function bootFailure(err) {
