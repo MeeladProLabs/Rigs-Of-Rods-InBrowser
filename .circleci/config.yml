@@ -3,7 +3,9 @@ version: 2.1
 jobs:
   web-check:
     docker:
-      - image: cimg/node:18
+      # Exact pin: the bare cimg/node:18 tag is not resolvable on Docker Hub
+      # ("manifest unknown"), which made the job fail before it even started.
+      - image: cimg/node:18.20.8
     steps:
       - checkout
       - run:
