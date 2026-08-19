@@ -65,7 +65,7 @@
     <button id="fitBtn" type="button">⤡ Fit window</button>
     <a href="controls.html" target="_blank">Controls</a>
   </div>
-  <div id="buildTag">build 15</div>
+  <div id="buildTag">build 16</div>
 
   <!-- On-screen error reporting: the last error is shown here so you can read it
        directly or copy it (the full log can be huge and freeze chat windows). -->
@@ -266,7 +266,7 @@
 </script>
 
 <script>
-  var BUILD = 15;   // bump this with every game rebuild so the browser fetches fresh wasm/data
+  var BUILD = 16;   // bump this with every game rebuild so the browser fetches fresh wasm/data
   var Module = {
     canvas:   document.getElementById('canvas'),
     print:    function (t) { console.log(t); },
@@ -277,7 +277,12 @@
     },
     onRuntimeInitialized: function () {
       var el = document.getElementById('hud');
-      if (el) { el.textContent = 'Running — click the canvas once, then play. Drag an edge or corner to resize.'; setTimeout(function(){ el.style.display = 'none'; }, 4000); }
+      var n = (window.__installedModFiles || []).length;
+      if (el) {
+        el.textContent = 'Running — click the canvas once, then play.' +
+          (n ? ' ' + n + ' installed mod(s) loaded into /content/.' : ' Drag an edge or corner to resize.');
+        setTimeout(function(){ el.style.display = 'none'; }, 6000);
+      }
     },
     // Runs after the game's data package is written into the virtual FS and
     // before main() scans /content/ — so installed mods from IndexedDB appear
