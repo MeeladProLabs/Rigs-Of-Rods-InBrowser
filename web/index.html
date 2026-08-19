@@ -17,19 +17,22 @@
              font:13px/1.4 system-ui, sans-serif; padding:6px 12px; border-radius:5px;
              border:none; cursor:pointer; }
   #links a:hover, #links button:hover { background:rgba(255,255,255,.25); }
-  /* Resize handles: corner (both axes), right edge (width), bottom edge (height) */
-  #resizer { position:absolute; right:0; bottom:0; z-index:20; width:26px; height:26px;
+  /* Resize handles — all INSIDE the frame so they are always grabbable.
+     Corner: both axes. Right edge: width. Bottom edge: height. */
+  #resizer { position:absolute; right:0; bottom:0; z-index:30; width:26px; height:26px;
              cursor:se-resize; touch-action:none; }
-  #resizer::after { content:""; position:absolute; right:4px; bottom:4px; width:12px; height:12px;
+  #resizer::after { content:""; position:absolute; right:5px; bottom:5px; width:12px; height:12px;
              border-right:3px solid rgba(255,255,255,.65); border-bottom:3px solid rgba(255,255,255,.65);
              border-radius:0 0 4px 0; }
   #resizer:hover::after { border-color:#fff; }
-  #resizer-e { position:absolute; right:-6px; top:0; bottom:0; z-index:20; width:12px;
-             cursor:ew-resize; touch-action:none; }
-  #resizer-e:hover { background:rgba(255,255,255,.15); }
-  #resizer-s { position:absolute; bottom:-6px; left:0; right:0; z-index:20; height:12px;
-             cursor:ns-resize; touch-action:none; }
-  #resizer-s:hover { background:rgba(255,255,255,.15); }
+  #resizer-e { position:absolute; right:0; top:0; bottom:26px; z-index:20; width:14px;
+             cursor:ew-resize; touch-action:none; border-radius:3px; }
+  #resizer-e:hover { background:rgba(255,255,255,.18); }
+  #resizer-s { position:absolute; bottom:0; left:0; right:26px; z-index:20; height:14px;
+             cursor:ns-resize; touch-action:none; border-radius:3px; }
+  #resizer-s:hover { background:rgba(255,255,255,.18); }
+  #buildTag { position:fixed; bottom:6px; right:8px; z-index:10; color:rgba(255,255,255,.45);
+             font:11px/1.3 ui-monospace, Consolas, monospace; }
 </style>
 </head>
 <body>
@@ -47,6 +50,7 @@
     <button id="fitBtn" type="button">⤡ Fit window</button>
     <a href="controls.html" target="_blank">Controls</a>
   </div>
+  <div id="buildTag">build 3</div>
 
 <script>
   // Resizable game screen.
@@ -79,6 +83,13 @@
       }
     }
 
+    function currentSize() {
+      // The real on-screen size right now (works in both fit and custom mode).
+      var w = (mode === 'custom') ? customW : (canvas.clientWidth  || window.innerWidth);
+      var h = (mode === 'custom') ? customH : (canvas.clientHeight || window.innerHeight);
+      return [w, h];
+    }
+
     function setFit() { mode = 'fit'; applySize(); }
 
     // Double-click the game to toggle between fullscreen and your custom size.
@@ -108,13 +119,13 @@
       ev.preventDefault();
       ev.stopPropagation();          // don't feed the click to the game
       if (mode === 'fit') {
-        customW = Math.min(customW, window.innerWidth  - 20);
-        customH = Math.min(customH, window.innerHeight - 20);
+        var cur = currentSize();
+        customW = cur[0];
+        customH = cur[1];
         mode = 'custom';
       }
       var startX = ev.clientX, startY = ev.clientY;
-      var startW = parseFloat(frame.style.width)  || canvas.clientWidth;
-      var startH = parseFloat(frame.style.height) || canvas.clientHeight;
+      var startW = customW, startH = customH;
 
       function onMove(e) {
         e.preventDefault();
@@ -148,6 +159,7 @@
 </script>
 
 <script>
+  var BUILD = 3;   // bump this with every game rebuild so the browser fetches fresh wasm/data
   var Module = {
     canvas:   document.getElementById('canvas'),
     print:    function (t) { console.log(t); },
@@ -159,10 +171,18 @@
     onRuntimeInitialized: function () {
       var el = document.getElementById('hud');
       if (el) { el.textContent = 'Running — click the canvas once, then play. Drag an edge or corner to resize.'; setTimeout(function(){ el.style.display = 'none'; }, 4000); }
+    },
+    // Cache-busting: the game server sends no cache headers, so without this the
+    // browser keeps the old 9 MB wasm + 112 MB data from the previous deploy.
+    locateFile: function (path) {
+      if (path.indexOf('.wasm') >= 0 || path.indexOf('.data') >= 0) {
+        return path + '?v=' + BUILD;
+      }
+      return path;
     }
   };
 </script>
 <script src="js/input.js"></script>
-<script src="RoR.js"></script>
+<script src="RoR.js?v=3"></script>
 </body>
 </html>
