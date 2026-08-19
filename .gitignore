@@ -1,0 +1,11 @@
+# Game binaries are build artifacts and exceed GitHub's 100 MB/file limit.
+# Build them (see BUILD.md) or distribute via GitHub Releases.
+web/RoR.data
+web/RoR.wasm
+web/RoR.js
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.log
+node_modules/

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rigs of Rods — Web</title>
+<style>
+  html, body { margin:0; padding:0; height:100%; background:#000; overflow:hidden; }
+  #stage { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  #frame { position:relative; width:100vw; height:100vh; }
+  #canvas { display:block; width:100%; height:100%; background:#000; }
+  #hud { position:fixed; top:8px; left:8px; z-index:10; color:#fff;
+          font:13px/1.4 ui-monospace, Consolas, monospace;
+          background:rgba(0,0,0,.55); padding:6px 10px; border-radius:5px; max-width:70vw; }
+  #links { position:fixed; top:8px; right:8px; z-index:10; display:flex; gap:8px; }
+  #links a, #links button { color:#fff; background:rgba(0,0,0,.55); text-decoration:none;
+             font:13px/1.4 system-ui, sans-serif; padding:6px 12px; border-radius:5px;
+             border:none; cursor:pointer; }
+  #links a:hover, #links button:hover { background:rgba(255,255,255,.25); }
+  /* Resize handles: corner (both axes), right edge (width), bottom edge (height) */
+  #resizer { position:absolute; right:0; bottom:0; z-index:20; width:26px; height:26px;
+             cursor:se-resize; touch-action:none; }
+  #resizer::after { content:""; position:absolute; right:4px; bottom:4px; width:12px; height:12px;
+             border-right:3px solid rgba(255,255,255,.65); border-bottom:3px solid rgba(255,255,255,.65);
+             border-radius:0 0 4px 0; }
+  #resizer:hover::after { border-color:#fff; }
+  #resizer-e { position:absolute; right:-6px; top:0; bottom:0; z-index:20; width:12px;
+             cursor:ew-resize; touch-action:none; }
+  #resizer-e:hover { background:rgba(255,255,255,.15); }
+  #resizer-s { position:absolute; bottom:-6px; left:0; right:0; z-index:20; height:12px;
+             cursor:ns-resize; touch-action:none; }
+  #resizer-s:hover { background:rgba(255,255,255,.15); }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <div id="frame">
+      <canvas id="canvas" tabindex="0"></canvas>
+      <div id="resizer-e" title="Drag to resize the width"></div>
+      <div id="resizer-s" title="Drag to resize the height"></div>
+      <div id="resizer" title="Drag to resize width and height. Double-click the game to toggle fullscreen."></div>
+    </div>
+  </div>
+  <div id="hud">Loading…</div>
+  <div id="links">
+    <a href="repo.html" target="_blank">📦 Mod Repository</a>
+    <button id="fitBtn" type="button">⤡ Fit window</button>
+    <a href="controls.html" target="_blank">Controls</a>
+  </div>
+
+<script>
+  // Resizable game screen.
+  // The game renders to a fixed 800x600 internal buffer; resizing here scales that
+  // buffer with CSS, so the game's GL state is never touched. Width and height are
+  // resized independently: drag the corner (both), right edge (width) or bottom
+  // edge (height).
+  (function () {
+    "use strict";
+    var frame   = document.getElementById('frame');
+    var canvas  = document.getElementById('canvas');
+    var fitBtn  = document.getElementById('fitBtn');
+    var handles = {
+      corner: document.getElementById('resizer'),
+      east:   document.getElementById('resizer-e'),
+      south:  document.getElementById('resizer-s')
+    };
+
+    var MIN_W = 320, MIN_H = 240;   // minimum sensible window size
+    var mode = 'fit';               // 'fit' = fill the browser window, 'custom' = user size
+    var customW = 960, customH = 600;
+
+    function applySize() {
+      if (mode === 'fit') {
+        frame.style.width  = '100vw';
+        frame.style.height = '100vh';
+      } else {
+        frame.style.width  = customW + 'px';
+        frame.style.height = customH + 'px';
+      }
+    }
+
+    function setFit() { mode = 'fit'; applySize(); }
+
+    // Double-click the game to toggle between fullscreen and your custom size.
+    canvas.addEventListener('dblclick', function () {
+      mode = (mode === 'fit') ? 'custom' : 'fit';
+      applySize();
+    });
+    if (fitBtn) fitBtn.addEventListener('click', setFit);
+
+    // Keep the custom size within the window when the browser itself is resized.
+    window.addEventListener('resize', function () {
+      if (mode === 'custom') {
+        customW = Math.min(customW, window.innerWidth  - 20);
+        customH = Math.min(customH, window.innerHeight - 20);
+        applySize();
+      }
+    });
+
+    function clamp(w, h) {
+      w = Math.max(MIN_W, Math.min(w, window.innerWidth  - 20));
+      h = Math.max(MIN_H, Math.min(h, window.innerHeight - 20));
+      return [w, h];
+    }
+
+    // axes: 'w' = width only, 'h' = height only, 'wh' = both.
+    function startDrag(ev, axes) {
+      ev.preventDefault();
+      ev.stopPropagation();          // don't feed the click to the game
+      if (mode === 'fit') {
+        customW = Math.min(customW, window.innerWidth  - 20);
+        customH = Math.min(customH, window.innerHeight - 20);
+        mode = 'custom';
+      }
+      var startX = ev.clientX, startY = ev.clientY;
+      var startW = parseFloat(frame.style.width)  || canvas.clientWidth;
+      var startH = parseFloat(frame.style.height) || canvas.clientHeight;
+
+      function onMove(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var w = startW, h = startH;
+        if (axes.indexOf('w') >= 0) w = startW + (e.clientX - startX);
+        if (axes.indexOf('h') >= 0) h = startH + (e.clientY - startY);
+        var c = clamp(w, h);
+        customW = c[0]; customH = c[1];
+        applySize();
+      }
+      function onUp() {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      }
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+
+    handles.corner.addEventListener('mousedown', function (ev) { startDrag(ev, 'wh'); });
+    handles.east.addEventListener('mousedown',   function (ev) { startDrag(ev, 'w'); });
+    handles.south.addEventListener('mousedown',  function (ev) { startDrag(ev, 'h'); });
+
+    // Keep handle interactions out of the game's input bridge.
+    ['mousemove', 'mouseup', 'click'].forEach(function (evt) {
+      Object.keys(handles).forEach(function (key) {
+        handles[key].addEventListener(evt, function (ev) { ev.stopPropagation(); });
+      });
+    });
+  })();
+</script>
+
+<script>
+  var Module = {
+    canvas:   document.getElementById('canvas'),
+    print:    function (t) { console.log(t); },
+    printErr: function (t) { console.error(t); },
+    setStatus: function (t) {
+      var el = document.getElementById('hud');
+      if (el) el.textContent = (t || 'Running');
+    },
+    onRuntimeInitialized: function () {
+      var el = document.getElementById('hud');
+      if (el) { el.textContent = 'Running — click the canvas once, then play. Drag an edge or corner to resize.'; setTimeout(function(){ el.style.display = 'none'; }, 4000); }
+    }
+  };
+</script>
+<script src="js/input.js"></script>
+<script src="RoR.js"></script>
+</body>
+</html>
