@@ -65,7 +65,7 @@
     <button id="fitBtn" type="button">⤡ Fit window</button>
     <a href="controls.html" target="_blank">Controls</a>
   </div>
-  <div id="buildTag">build 4</div>
+  <div id="buildTag">build 15</div>
 
   <!-- On-screen error reporting: the last error is shown here so you can read it
        directly or copy it (the full log can be huge and freeze chat windows). -->
@@ -266,7 +266,7 @@
 </script>
 
 <script>
-  var BUILD = 4;   // bump this with every game rebuild so the browser fetches fresh wasm/data
+  var BUILD = 15;   // bump this with every game rebuild so the browser fetches fresh wasm/data
   var Module = {
     canvas:   document.getElementById('canvas'),
     print:    function (t) { console.log(t); },
@@ -279,6 +279,10 @@
       var el = document.getElementById('hud');
       if (el) { el.textContent = 'Running — click the canvas once, then play. Drag an edge or corner to resize.'; setTimeout(function(){ el.style.display = 'none'; }, 4000); }
     },
+    // Runs after the game's data package is written into the virtual FS and
+    // before main() scans /content/ — so installed mods from IndexedDB appear
+    // in the game pickers exactly like the built-in agora.zip / dafsemi.zip.
+    preRun: [injectInstalledMods],
     // Cache-busting: the game server sends no cache headers, so without this the
     // browser keeps the old 9 MB wasm + 112 MB data from the previous deploy.
     locateFile: function (path) {
@@ -288,6 +292,87 @@
       return path;
     }
   };
+  // ?map=<name> auto-loads a terrain at boot (skips the menu) — used for testing.
+  // ?truck=<name> spawns that vehicle right after the terrain loads.
+  (function () {
+    var m = new URLSearchParams(location.search).get('map');
+    var t = new URLSearchParams(location.search).get('truck');
+    if (m || t) {
+      Module.arguments = [];
+      if (m) { Module.arguments.push('-map', m); }
+      if (t) { Module.arguments.push('-truck', t); }
+    }
+  })();
+</script>
+
+<script>
+  // ===== Installed-mod injection (IndexedDB -> game /content/) =====
+  // The Mod Repository page (repo.html) stores downloaded mods as blobs in the
+  // "RoRMods" IndexedDB database. Here we read them while the game's data file
+  // downloads, then injectInstalledMods() (called from Module.preRun) writes
+  // them into the game's virtual /content/ folder before it scans for mods.
+  // No installed mods -> the game boots exactly as before.
+  (function () {
+    window.__installedModFiles = [];
+    try {
+      var req = indexedDB.open('RoRMods', 1);
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains('mods')) {
+          db.createObjectStore('mods', { keyPath: 'filename' });
+        }
+      };
+      req.onsuccess = function () {
+        var db = req.result;
+        try {
+          var tx = db.transaction('mods', 'readonly');
+          var all = tx.objectStore('mods').getAll();
+          all.onsuccess = function () {
+            var recs = all.result || [];
+            var pending = [];
+            recs.forEach(function (rec) {
+              if (!rec || !rec.filename || !(rec.data instanceof Blob)) return;
+              pending.push(rec.data.arrayBuffer().then(function (buf) {
+                var bytes = new Uint8Array(buf);
+                // Only accept real zip archives (PK magic) so a bad download
+                // can never break the game's content scanner.
+                var ok = bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4B &&
+                         (bytes[2] === 0x03 || bytes[2] === 0x05 || bytes[2] === 0x07);
+                if (ok) {
+                  window.__installedModFiles.push({ name: rec.filename, data: bytes });
+                } else {
+                  console.warn('[RoRMods] skipped ' + rec.filename + ': not a zip archive');
+                }
+              }).catch(function () {}));
+            });
+            Promise.all(pending).then(function () {
+              console.log('[RoRMods] ' + window.__installedModFiles.length + ' installed mod(s) ready');
+            });
+          };
+        } catch (e) { console.warn('[RoRMods] read failed: ' + e); }
+      };
+      req.onerror = function () { console.warn('[RoRMods] IndexedDB unavailable; game boots without installed mods'); };
+    } catch (e) { console.warn('[RoRMods] IndexedDB unavailable; game boots without installed mods'); }
+  })();
+
+  function injectInstalledMods() {
+    var mods = window.__installedModFiles || [];
+    if (!mods.length) return;
+    if (!Module.FS_createDataFile) {
+      console.warn('[RoRMods] FS not available; skipping injection');
+      return;
+    }
+    var injected = 0;
+    mods.forEach(function (m) {
+      try {
+        Module.FS_createDataFile('/content', m.name, m.data, true, true, true);
+        injected++;
+      } catch (e) {
+        console.warn('[RoRMods] could not inject ' + m.name + ': ' + e);
+      }
+    });
+    console.log('[RoRMods] injected ' + injected + ' installed mod(s) into /content/ — look for them in the game pickers');
+  }
 </script>
 <script src="js/input.js"></script>
 <script src="RoR.js?v=4"></script>

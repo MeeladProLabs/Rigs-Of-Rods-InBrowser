@@ -13,6 +13,8 @@
     --muted: #9a9aa5;
     --accent: #c9a227;
     --accent-hover: #e0b93a;
+    --ok: #3fae5a;
+    --bad: #c24b4b;
     --border: #3a3a42;
   }
   * { box-sizing: border-box; }
@@ -56,6 +58,21 @@
   .meta b { color: var(--text); font-weight: 600; }
   .cat-chip { align-self: flex-start; background: var(--panel2); border: 1px solid var(--border);
     color: var(--accent); font-size: 11px; padding: 2px 8px; border-radius: 20px; }
+  /* Installed mods panel */
+  .installed { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 22px; }
+  .installed h2 { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  .installed h2 .ok { color: var(--ok); }
+  .installed .empty { color: var(--muted); font-size: 13px; }
+  .installed ul { list-style: none; margin: 0; padding: 0; }
+  .installed li { display: flex; align-items: center; gap: 10px; padding: 7px 0;
+    border-top: 1px solid var(--border); font-size: 13.5px; flex-wrap: wrap; }
+  .installed li:first-child { border-top: none; }
+  .installed .fname { font-weight: 600; }
+  .installed .fsize { color: var(--muted); }
+  .installed .rm { margin-left: auto; background: none; border: 1px solid var(--border);
+    color: var(--bad); border-radius: 5px; padding: 4px 10px; cursor: pointer; font-size: 12.5px; }
+  .installed .rm:hover { border-color: var(--bad); }
   /* Modal */
   .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.78);
     align-items: center; justify-content: center; z-index: 100; padding: 20px; }
@@ -72,6 +89,13 @@
   .modal .meta { margin: 2px 0; }
   .modal img { max-width: 100%; border-radius: 8px; margin: 10px 0; }
   .desc { line-height: 1.6; font-size: 14px; word-wrap: break-word; margin-top: 12px; }
+  .file-row { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; margin-top: 10px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .file-row .fname { font-weight: 600; font-size: 13.5px; }
+  .file-row .fsize { color: var(--muted); font-size: 12.5px; }
+  .file-row .status { font-size: 12.5px; margin-left: auto; }
+  .file-row .status.ok { color: var(--ok); }
+  .file-row .status.err { color: var(--bad); }
   .actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
   .btn {
     display: inline-block; background: var(--accent); color: #141416; font-weight: 700;
@@ -79,13 +103,15 @@
     border: none; cursor: pointer;
   }
   .btn:hover { background: var(--accent-hover); }
+  .btn:disabled { opacity: .55; cursor: wait; }
   .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
   .btn.ghost:hover { border-color: var(--accent); }
+  .btn.ok { background: var(--ok); color: #fff; }
   #moreWrap { text-align: center; margin: 24px 0; }
   #loadMore { background: var(--panel2); color: var(--text); border: 1px solid var(--border);
     padding: 10px 26px; border-radius: 7px; cursor: pointer; font-size: 14px; }
   #loadMore:hover { border-color: var(--accent); }
-  .hint { color: var(--muted); font-size: 13px; margin: 16px 0; line-height: 1.5; }
+  .hint { color: var(--muted); font-size: 13px; margin: 16px 0; line-height: 1.6; }
   code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 </style>
 </head>
@@ -95,6 +121,12 @@
   <h1>Rigs of Rods — Mod Repository</h1>
   <a href="index.html">← Back to game</a>
 </header>
+
+<div class="installed" id="installedPanel">
+  <h2><span class="ok">✓</span> Installed into the game (IndexedDB)</h2>
+  <div class="empty" id="installedEmpty">Nothing installed yet — open a mod and press <b>Install</b>. The mod is stored in your browser and automatically injected into the game's <code>content</code> folder on the next game start.</div>
+  <ul id="installedList"></ul>
+</div>
 
 <div class="controls">
   <input type="text" id="search" placeholder="Search mods by title, author or tagline…">
@@ -110,12 +142,11 @@
 </div>
 
 <p class="hint">
-  Browsing the official Rigs of Rods repository (975+ resources). <b>Download</b> opens
-  the official forum and starts the file download directly. If the forum shows an
-  error page instead, you are likely not logged in — open the resource page, log in at
-  <b>forum.rigsofrods.org</b> (or clear that site's cookies), then download again.
-  <b>Install into the game</b>: drop the downloaded zip into the game's <code>content</code>
-  folder — in-game installation is on the roadmap.
+  Browsing the official Rigs of Rods repository (975+ resources). <b>Install</b> downloads the
+  mod file into your browser's <b>IndexedDB</b> and it is automatically injected into the game's
+  <code>content</code> folder when you start the game — no manual file handling. Mods installed this
+  way are available in the vehicle/map pickers (look for the mod's name or the default truck).
+  <b>Download</b> saves the file to your computer instead, if you prefer manual installation.
 </p>
 
 <!-- Details modal -->
@@ -127,7 +158,10 @@
     <div class="meta" id="mAuthor"></div>
     <div class="meta" id="mStats"></div>
     <div class="desc" id="mDesc"></div>
-    <div class="actions" id="mActions"></div>
+    <div id="mFiles"></div>
+    <div class="actions">
+      <a class="btn ghost" id="mView" href="#" target="_blank" rel="noopener">View on forum</a>
+    </div>
   </div>
 </div>
 
@@ -148,25 +182,135 @@
   var moreWrap = document.getElementById('moreWrap');
   var loadMore = document.getElementById('loadMore');
   var modal = document.getElementById('modal');
+  var installedList = document.getElementById('installedList');
+  var installedEmpty = document.getElementById('installedEmpty');
 
+  // ================= IndexedDB mod storage =================
+  var DB_NAME = 'RoRMods', DB_VER = 1, STORE = 'mods';
+
+  function openDB() {
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open(DB_NAME, DB_VER);
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains(STORE)) {
+          db.createObjectStore(STORE, { keyPath: 'filename' });
+        }
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+  function listMods() {
+    return openDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(STORE, 'readonly');
+        var all = tx.objectStore(STORE).getAll();
+        all.onsuccess = function () { resolve(all.result || []); };
+        all.onerror = function () { reject(all.error); };
+        tx.oncomplete = function () { db.close(); };
+      });
+    });
+  }
+  function saveMod(rec) {
+    return openDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).put(rec);
+        tx.oncomplete = function () { db.close(); resolve(); };
+        tx.onerror = function () { db.close(); reject(tx.error); };
+      });
+    });
+  }
+  function removeMod(filename) {
+    return openDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).delete(filename);
+        tx.oncomplete = function () { db.close(); resolve(); };
+        tx.onerror = function () { db.close(); reject(tx.error); };
+      });
+    });
+  }
+
+  function fmtBytes(b) {
+    if (!b) return '0 B';
+    var u = ['B', 'KB', 'MB', 'GB'], i = Math.floor(Math.log(b) / Math.log(1024));
+    return (b / Math.pow(1024, i)).toFixed(i ? 1 : 0) + ' ' + u[i];
+  }
+
+  // ================= Installed mods panel =================
+  function renderInstalled() {
+    listMods().then(function (mods) {
+      installedList.innerHTML = '';
+      installedEmpty.style.display = mods.length ? 'none' : 'block';
+      mods.forEach(function (m) {
+        var li = document.createElement('li');
+        var rm = document.createElement('button');
+        rm.className = 'rm';
+        rm.textContent = 'Remove';
+        rm.addEventListener('click', function () {
+          removeMod(m.filename).then(function () {
+            renderInstalled();
+            // also refresh any open modal
+            var cur = document.querySelector('.file-row[data-filename="' + m.filename.replace(/"/g, '') + '"]');
+            if (cur) cur.querySelector('.status').textContent = '';
+          });
+        });
+        li.innerHTML = '<span class="fname"></span><span class="fsize"></span>';
+        li.querySelector('.fname').textContent = m.filename;
+        li.querySelector('.fsize').textContent = '· ' + fmtBytes(m.size);
+        li.appendChild(rm);
+        installedList.appendChild(li);
+      });
+    }).catch(function () {});
+  }
+  renderInstalled();
+
+  // ================= Helpers =================
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
-
   function authors(mod) {
     return (mod.custom_fields && mod.custom_fields.authors) || mod.author || 'Unknown';
   }
   function catTitle(id) { return catMap[id] || 'Miscellaneous'; }
-  function downloadUrl(mod) {
-    // view_url e.g. .../resources/yugoslavian-mini-skin.1396/ -> .../download
+  function fileDownloadUrl(mod, file) {
+    // https://forum.rigsofrods.org/resources/{resource_id}/download?file={file_id}
     var base = (mod.view_url || '').replace(/\/+$/, '');
     if (!base) return null;
-    return base + '/download';
+    return base + '/download?file=' + encodeURIComponent(file.id);
   }
 
-  // --- BBCode -> HTML (small, safe subset) ---
+  // ---- CORS-safe binary fetch (direct first, then public proxies) ----
+  // The forum sends no CORS headers, so the browser can't fetch downloads
+  // directly; we try a chain of public CORS proxies. Each attempt times out.
+  function fetchWithTimeout(url, ms) {
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, ms || 90000);
+    return fetch(url, { signal: ctrl.signal }).then(function (r) {
+      clearTimeout(timer);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.blob();
+    }, function (e) { clearTimeout(timer); throw e; });
+  }
+  function fetchModBinary(url) {
+    var attempts = [url];
+    if (url.indexOf('forum.rigsofrods.org') !== -1) {
+      attempts = attempts.concat([
+        'https://corsproxy.io/?url=' + encodeURIComponent(url),
+        'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
+        'https://cors.eu.org/' + url
+      ]);
+    }
+    return attempts.reduce(function (chain, u) {
+      return chain.catch(function () { return fetchWithTimeout(u); });
+    }, Promise.reject(new Error('no attempts')));
+  }
+
+  // ================= BBCode -> HTML =================
   function bbcode(text) {
     if (!text) return 'No description provided.';
     var s = esc(text);
@@ -191,6 +335,7 @@
     return s;
   }
 
+  // ================= Cards / grid =================
   function card(mod) {
     var el = document.createElement('div');
     el.className = 'card';
@@ -233,6 +378,7 @@
     render();
   }
 
+  // ================= Details modal =================
   function showDetails(mod) {
     modal.classList.add('open');
     document.getElementById('mTitle').textContent = mod.title || 'Untitled';
@@ -242,36 +388,99 @@
       '⬇ ' + (mod.download_count || 0) + ' downloads · ★ ' + (mod.rating_weighted || 'n/a') +
       ' · v' + (mod.version || '?') + ' · ' + new Date((mod.resource_date || Date.now()) * 1000).toLocaleDateString();
     document.getElementById('mDesc').innerHTML = 'Loading description…';
-    document.getElementById('mActions').innerHTML = '';
+    document.getElementById('mFiles').innerHTML = '';
+    var view = document.getElementById('mView');
+    view.href = mod.view_url || '#';
 
     fetch(API + '/resources/' + mod.resource_id).then(function (r) { return r.json(); }).then(function (data) {
       var full = data.resource || data;
       document.getElementById('mDesc').innerHTML = bbcode(full.description);
+      renderFiles(mod, full.current_files || []);
     }).catch(function () {
       document.getElementById('mDesc').textContent = 'Could not load the full description.';
     });
-
-    var actions = document.getElementById('mActions');
-    var dl = downloadUrl(mod);
-    if (dl) {
-      var a = document.createElement('a');
-      a.className = 'btn';
-      a.href = dl;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.textContent = '⬇ Download';
-      actions.appendChild(a);
-    }
-    var view = document.createElement('a');
-    view.className = 'btn ghost';
-    view.href = mod.view_url || '#';
-    view.target = '_blank';
-    view.rel = 'noopener';
-    view.textContent = 'View on forum';
-    actions.appendChild(view);
   }
 
-  // --- Init ---
+  function renderFiles(mod, files) {
+    var box = document.getElementById('mFiles');
+    box.innerHTML = '';
+    if (!files.length) {
+      box.innerHTML = '<p class="hint" style="margin:12px 0 0">No downloadable files are tracked for this resource.</p>';
+      return;
+    }
+    listMods().then(function (installed) {
+      var installedNames = {};
+      installed.forEach(function (m) { installedNames[m.filename] = true; });
+      files.forEach(function (file) {
+        var row = document.createElement('div');
+        row.className = 'file-row';
+        row.setAttribute('data-filename', file.filename);
+        var url = fileDownloadUrl(mod, file);
+        var already = !!installedNames[file.filename];
+
+        var status = document.createElement('span');
+        status.className = 'status' + (already ? ' ok' : '');
+        status.textContent = already ? '✓ Installed' : '';
+
+        var installBtn = document.createElement('button');
+        installBtn.className = 'btn' + (already ? ' ok' : '');
+        installBtn.textContent = already ? 'Reinstall' : 'Install into game';
+        if (url) {
+          installBtn.addEventListener('click', function () {
+            doInstall(mod, file, url, installBtn, status);
+          });
+        } else {
+          installBtn.disabled = true;
+          installBtn.title = 'No download URL available';
+        }
+
+        var dl = document.createElement('a');
+        dl.className = 'btn ghost';
+        dl.textContent = '⬇ Download';
+        if (url) { dl.href = url; dl.target = '_blank'; dl.rel = 'noopener'; }
+        else { dl.style.opacity = .5; dl.style.pointerEvents = 'none'; }
+
+        row.innerHTML = '<span class="fname"></span><span class="fsize"></span>';
+        row.querySelector('.fname').textContent = file.filename;
+        row.querySelector('.fsize').textContent = '· ' + fmtBytes(file.size);
+        row.appendChild(installBtn);
+        row.appendChild(dl);
+        row.appendChild(status);
+        box.appendChild(row);
+      });
+    }).catch(function () {});
+  }
+
+  function doInstall(mod, file, url, btn, statusEl) {
+    btn.disabled = true;
+    statusEl.className = 'status';
+    statusEl.textContent = 'Downloading… (may take a moment)';
+    fetchModBinary(url).then(function (blob) {
+      return saveMod({
+        filename: file.filename,
+        size: blob.size,
+        data: blob,
+        title: mod.title || file.filename,
+        resource_id: mod.resource_id,
+        installed_at: Date.now()
+      }).then(function () { return blob.size; });
+    }).then(function (size) {
+      statusEl.className = 'status ok';
+      statusEl.textContent = '✓ Installed (' + fmtBytes(size) + ') — restart the game to use it';
+      btn.className = 'btn ok';
+      btn.textContent = 'Reinstall';
+      btn.disabled = false;
+      renderInstalled();
+    }).catch(function (err) {
+      statusEl.className = 'status err';
+      statusEl.textContent = 'In-browser download failed (' + (err && err.message ? err.message : 'network/CORS') + ')';
+      btn.disabled = false;
+      // Last resort: open the direct forum link (no CORS needed in a new tab).
+      if (url) window.open(url, '_blank');
+    });
+  }
+
+  // ================= Init =================
   fetch(API + '/resource-categories')
     .then(function (r) { return r.json(); })
     .then(function (data) {

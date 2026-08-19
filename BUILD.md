@@ -51,6 +51,17 @@ cmake --build build/ror -j 8
 # outputs: build/ror/bin/RoR.js, RoR.wasm, RoR.data
 ```
 
+Before rebuilding after a resource change, regenerate the WebGL-compatible
+RTSS shader library (the stock `rtshader.zip` is desktop GLSL and its libs lag
+the compiled RTSS generator):
+
+```bash
+python scripts/fix_rtshader_es.py
+```
+
+(also run this the first time, and delete `build/ror/bin/RoR.data*` before
+`cmake --build` so the emscripten packager re-packs it).
+
 Deploy the build into `web/` (splits `RoR.data` into GitHub-friendly chunks
 and patches `RoR.js` to download them):
 
@@ -88,7 +99,8 @@ RoR-side code (Ogre is untouched):
 | `source/ror/source/main/gui/imgui/OgreImGuiOverlay.cpp` | ImGui menu material: GLSL shaders (world transform + texture × vertex colour). |
 | `source/ror/source/main/terrain/Terrain.cpp` | Skybox material: GLSL cube-map shaders; fixed the `worldviewproj_matrix` auto-constant binding. |
 | `source/ror/source/main/terrain/OgreTerrainPSSMMaterialGenerator.{h,cpp}` | Ported the terrain material generator's GLSL/GLSL ES shader generators (vertex + fragment for all techniques: high LOD, low LOD/composite map, composite-map render). Upstream only implemented Cg/HLSL, so the GLSL path was stubs returning empty source → `Failed to preprocess shader`. Also fixed a double-append of the technique suffix in program names (`.../hlod/hlod`). Samplers are bound to texture units explicitly, in `addTechnique` order. |
-| `source/ror/source/main/resources/ContentManager.cpp` | Ogre's built-in `BaseWhite` / `BaseWhiteNoLighting` materials (used by the reference grid, collision wireframes, ManualObjects, Hydrax water) get GLSL shaders at startup. |
+| `source/ror/source/main/resources/ContentManager.cpp` | Two web fixes: (1) Ogre's built-in `BaseWhite` / `BaseWhiteNoLighting` materials (used by the reference grid, collision wireframes, ManualObjects, Hydrax water) get GLSL shaders at startup; (2) the `textures` pack is also registered into `MaterialsRG` / `OverlaysRG` / `ParticlesRG` when those packs load — Ogre resolves a texture only against the referencing script's own group, so the skybox cubemap, dashboard needles and particle sprites (all in `textures.zip`) were blank/black. |
+| `scripts/fix_rtshader_es.py` | Also rewrites `FFPLib_AlphaTest.glsl` — the stock lib uses a `switch` statement, which is **invalid in GLSL ES 1.00** and made RTSS shaders for alpha-rejected materials (dashboard needles, glass) fail to compile → the game froze on vehicle spawn. Rewritten as an if/else chain. |
 | `source/ror/source/main/AppContext.{h,cpp}` | Initializes the **RTSS (Real-Time Shader System)** on the web build after the render window is created: registers the `SGTechniqueResolverListener` and switches the material scheme to RTSS's. This auto-generates GLSL ES shaders for **every** fixed-function material (particles, Hydrax water, plain object materials, mods, ...); materials with custom shaders (terrain, wallpaper, skybox) are left untouched. |
 | `source/ror/source/main/gfx/GfxScene.cpp` | Registers the scene manager with RTSS (`addSceneManager`) so generated shaders get light data. |
 
