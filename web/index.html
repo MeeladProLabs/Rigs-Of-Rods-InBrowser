@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rigs of Rods — Web</title>
+<!-- Cross-Origin-Isolation service worker: injects COOP/COEP so the threaded
+     build gets SharedArrayBuffer on hosts that can't send headers (GitHub Pages).
+     The same file is used as a page script (registers itself) and as the worker. -->
+<script src="coi-sw.js"></script>
 <style>
   html, body { margin:0; padding:0; height:100%; background:#000; overflow:hidden; }
   #stage { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
@@ -33,6 +37,17 @@
   #resizer-s:hover { background:rgba(255,255,255,.18); }
   #buildTag { position:fixed; bottom:6px; right:8px; z-index:10; color:rgba(255,255,255,.45);
              font:11px/1.3 ui-monospace, Consolas, monospace; }
+  /* On-screen error box: shows the crash reason directly in the page, so errors
+     are readable without opening the console or pasting huge logs. */
+  #errbox { display:none; position:fixed; top:0; left:0; right:0; z-index:100;
+            background:#7a0e0e; color:#fff; font:13px/1.5 ui-monospace, Consolas, monospace;
+            padding:10px 14px; max-height:45vh; overflow:auto; box-shadow:0 4px 14px rgba(0,0,0,.6); }
+  #errbox .err-title { font-weight:bold; margin-bottom:6px; }
+  #errbox .err-msg { white-space:pre-wrap; word-break:break-word; }
+  #errbox .err-actions { margin-top:8px; }
+  #errbox button { background:#fff; color:#7a0e0e; border:none; border-radius:4px;
+            font:12px/1.3 system-ui, sans-serif; font-weight:bold; padding:5px 10px;
+            margin-right:8px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -50,7 +65,19 @@
     <button id="fitBtn" type="button">⤡ Fit window</button>
     <a href="controls.html" target="_blank">Controls</a>
   </div>
-  <div id="buildTag">build 3</div>
+  <div id="buildTag">build 4</div>
+
+  <!-- On-screen error reporting: the last error is shown here so you can read it
+       directly or copy it (the full log can be huge and freeze chat windows). -->
+  <div id="errbox">
+    <div class="err-title">⚠ The game hit a problem</div>
+    <div class="err-msg" id="errmsg"></div>
+    <div class="err-actions">
+      <button id="errCopy" type="button">📋 Copy error</button>
+      <button id="errCopyLog" type="button">📋 Copy full log</button>
+      <button id="errReload" type="button">↻ Reload</button>
+    </div>
+  </div>
 
 <script>
   // Resizable game screen.
@@ -159,7 +186,87 @@
 </script>
 
 <script>
-  var BUILD = 3;   // bump this with every game rebuild so the browser fetches fresh wasm/data
+  // ---- On-screen error capture -------------------------------------------
+  (function () {
+    "use strict";
+    var box     = document.getElementById('errbox');
+    var msgEl   = document.getElementById('errmsg');
+    var fullLog = [];
+    var shown   = false;
+
+    function showError(text) {
+      if (shown) return;              // keep the FIRST crash reason
+      shown = true;
+      msgEl.textContent = text;
+      box.style.display = 'block';
+    }
+
+    function isCritical(line) {
+      return /(exception has occured|exception has occurred|InvalidStateException|RenderingAPIException|InternalErrorException|aborted|failed to preprocess|Failed to preprocess|WebAssembly|out of memory|SharedArrayBuffer|ReferenceError|TypeError|RangeError|RuntimeError|assertion failed)/i.test(line)
+             && !/preparing texture/.test(line);
+    }
+
+    // Full-log buffer (bounded) for the "copy full log" button.
+    window.__rorLog = fullLog;
+    function pushLog(line) {
+      if (typeof line !== 'string') line = String(line);
+      fullLog.push(line);
+      if (fullLog.length > 2000) fullLog.splice(0, fullLog.length - 2000);
+    }
+
+    document.getElementById('errCopy').addEventListener('click', function () {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(msgEl.textContent);
+      }
+    });
+    document.getElementById('errCopyLog').addEventListener('click', function () {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(fullLog.join('\n'));
+      }
+    });
+    document.getElementById('errReload').addEventListener('click', function () { location.reload(); });
+
+    window.addEventListener('error', function (e) {
+      var text = e.message || 'Unknown page error';
+      pushLog(text);
+      if (isCritical(text)) showError(text);
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var text = 'Unhandled promise rejection: ' + (e.reason && e.reason.message ? e.reason.message : e.reason);
+      pushLog(text);
+      if (isCritical(String(text))) showError(text);
+    });
+
+    // Hook into the Emscripten Module so we see the game's stderr directly.
+    var realModulePrintErr = null;
+    Object.defineProperty(window, 'Module', {
+      configurable: true,
+      get: function () { return window.__module; },
+      set: function (m) {
+        window.__module = m;
+        if (m) {
+          var origPrintErr = m.printErr;
+          m.printErr = function (line) {
+            pushLog(line);
+            if (isCritical(String(line))) showError(line);
+            if (origPrintErr) origPrintErr.apply(m, arguments);
+            else if (console && console.error) console.error(line);
+          };
+          var origAbort = m.onAbort;
+          m.onAbort = function (what) {
+            var text = 'Aborted: ' + what;
+            pushLog(text);
+            showError(text);
+            if (origAbort) origAbort.apply(m, arguments);
+          };
+        }
+      }
+    });
+  })();
+</script>
+
+<script>
+  var BUILD = 4;   // bump this with every game rebuild so the browser fetches fresh wasm/data
   var Module = {
     canvas:   document.getElementById('canvas'),
     print:    function (t) { console.log(t); },
@@ -183,6 +290,6 @@
   };
 </script>
 <script src="js/input.js"></script>
-<script src="RoR.js?v=3"></script>
+<script src="RoR.js?v=4"></script>
 </body>
 </html>

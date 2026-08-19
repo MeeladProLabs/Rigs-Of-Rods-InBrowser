@@ -51,10 +51,11 @@ cmake --build build/ror -j 8
 # outputs: build/ror/bin/RoR.js, RoR.wasm, RoR.data
 ```
 
-Deploy the three `RoR.*` binaries into `web/`:
+Deploy the build into `web/` (splits `RoR.data` into GitHub-friendly chunks
+and patches `RoR.js` to download them):
 
 ```bash
-cp build/ror/bin/RoR.js build/ror/bin/RoR.wasm build/ror/bin/RoR.data web/
+python scripts/deploy-web.py
 ```
 
 Notes:
@@ -66,9 +67,14 @@ Notes:
   and rejects native calling conventions). The engine prints
   `Type registrations done. If you see no error above everything should be
   working` and continues; none of the bundled mods contain `.as` scripts.
-- `RoR.data` (~112 MB) exceeds GitHub's 100 MB-per-file limit, so the
-  binaries are **not committed** to this repository. Distribute the playable
-  build as a GitHub Release instead.
+- `RoR.data` (~112 MB) exceeds GitHub's 100 MB-per-file limit, so
+  `scripts/deploy-web.py` splits it into `RoR.data.0` / `RoR.data.1`
+  (~60 MB each) and patches `RoR.js` to fetch and concatenate the chunks.
+  The split binaries **are** committed, which is what makes the game run
+  directly from GitHub Pages.
+- The threaded build needs a cross-origin-isolated page (SharedArrayBuffer).
+  GitHub Pages cannot send COOP/COEP headers, so `web/coi-sw.js` (a service
+  worker registered by `index.html`) injects them at runtime.
 
 ## Source patches applied (relative to upstream)
 
@@ -83,6 +89,8 @@ RoR-side code (Ogre is untouched):
 | `source/ror/source/main/terrain/Terrain.cpp` | Skybox material: GLSL cube-map shaders; fixed the `worldviewproj_matrix` auto-constant binding. |
 | `source/ror/source/main/terrain/OgreTerrainPSSMMaterialGenerator.{h,cpp}` | Ported the terrain material generator's GLSL/GLSL ES shader generators (vertex + fragment for all techniques: high LOD, low LOD/composite map, composite-map render). Upstream only implemented Cg/HLSL, so the GLSL path was stubs returning empty source → `Failed to preprocess shader`. Also fixed a double-append of the technique suffix in program names (`.../hlod/hlod`). Samplers are bound to texture units explicitly, in `addTechnique` order. |
 | `source/ror/source/main/resources/ContentManager.cpp` | Ogre's built-in `BaseWhite` / `BaseWhiteNoLighting` materials (used by the reference grid, collision wireframes, ManualObjects, Hydrax water) get GLSL shaders at startup. |
+| `source/ror/source/main/AppContext.{h,cpp}` | Initializes the **RTSS (Real-Time Shader System)** on the web build after the render window is created: registers the `SGTechniqueResolverListener` and switches the material scheme to RTSS's. This auto-generates GLSL ES shaders for **every** fixed-function material (particles, Hydrax water, plain object materials, mods, ...); materials with custom shaders (terrain, wallpaper, skybox) are left untouched. |
+| `source/ror/source/main/gfx/GfxScene.cpp` | Registers the scene manager with RTSS (`addSceneManager`) so generated shaders get light data. |
 
 ## CircleCI
 
