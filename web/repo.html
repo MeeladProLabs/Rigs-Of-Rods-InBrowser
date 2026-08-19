@@ -176,9 +176,9 @@
   var API = "https://v2.api.rigsofrods.org";
   var FORUM = "https://forum.rigsofrods.org";
   // Your own Cloudflare Worker proxy (see README "Mod install proxy" and
-  // cloudflare-worker/). Paste your workers.dev URL here, or test instantly
-  // without editing: repo.html?proxy=https://your-worker.workers.dev
-  var MY_PROXY = (new URLSearchParams(location.search)).get('proxy') || '';
+  // cloudflare-worker/). Verified working for the forum downloads.
+  // Override anytime with: repo.html?proxy=<other-url>
+  var MY_PROXY = (new URLSearchParams(location.search)).get('proxy') || 'https://ror-mod-proxy.mohammad-milad-stu.workers.dev';
 
   var allMods = [];
   var catMap = {};            // category id -> title
