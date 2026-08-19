@@ -175,6 +175,10 @@
   "use strict";
   var API = "https://v2.api.rigsofrods.org";
   var FORUM = "https://forum.rigsofrods.org";
+  // Your own Cloudflare Worker proxy (see README "Mod install proxy" and
+  // cloudflare-worker/). Paste your workers.dev URL here, or test instantly
+  // without editing: repo.html?proxy=https://your-worker.workers.dev
+  var MY_PROXY = (new URLSearchParams(location.search)).get('proxy') || '';
 
   var allMods = [];
   var catMap = {};            // category id -> title
@@ -303,7 +307,12 @@
     }, function (e) { clearTimeout(timer); throw e; });
   }
   function fetchModBinary(url) {
-    var attempts = [url];
+    // Your own Worker first (reliable), then public proxies, then direct.
+    var attempts = [];
+    if (MY_PROXY && url.indexOf('forum.rigsofrods.org') !== -1) {
+      attempts.push(MY_PROXY + '/?url=' + encodeURIComponent(url));
+    }
+    attempts.push(url);
     if (url.indexOf('forum.rigsofrods.org') !== -1) {
       attempts = attempts.concat([
         'https://corsproxy.io/?url=' + encodeURIComponent(url),

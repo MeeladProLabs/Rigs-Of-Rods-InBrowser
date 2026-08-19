@@ -66,6 +66,14 @@ The goal is a fully working Rigs of Rods in the browser. What works today:
 - **Mod repository** — [repo.html](web/repo.html) browses the official Rigs of
   Rods repository (975+ resources): search, category filter, thumbnails,
   ratings, downloads, and per-mod detail pages with download links.
+- **Install mods into the game** — **Install** downloads a mod into the
+  browser's **IndexedDB**; on the next game start, `index.html` injects the
+  stored zips into the game's virtual `/content/` folder before its content
+  scan, so installed mods appear in the in-game pickers. Because the forum
+  sends no CORS headers, the download step uses a Cloudflare Worker proxy when
+  configured (see [Mod install proxy](#mod-install-proxy-cloudflare-worker)),
+  falls back to public proxies, and always offers an **Import mod file…**
+  picker as a guaranteed path.
 - **CI** — CircleCI validates the web frontend on every push (see
   [.circleci/config.yml](.circleci/config.yml)).
 
@@ -109,10 +117,41 @@ usual Rigs of Rods bindings (WASD + mouse).
 ## Repository & multiplayer
 
 - **Mod repository** — implemented as a web page (`web/repo.html`) backed by
-  the official Rigs of Rods API. Browsing/downloading works today; *in-game*
-  install (dropping a downloaded mod zip into the game's content folder at
-  runtime) is on the roadmap.
+  the official Rigs of Rods API: browse, search, filter by category, view
+  details, and **Install** a mod into the game (IndexedDB → `/content/`
+  injection on next boot). See
+  [Mod install proxy](#mod-install-proxy-cloudflare-worker) for the reliable
+  one-click install path.
 - **Multiplayer** — planned, not started yet.
+
+## Mod install proxy (Cloudflare Worker)
+
+The forum (`forum.rigsofrods.org`) sends no CORS headers, so a browser page
+cannot read mod downloads directly. Public CORS proxies are flaky; the
+reliable fix is a tiny Cloudflare Worker that fetches the file server-side and
+returns it with CORS headers. **Free tier — no credit card required.**
+
+1. Create a free Cloudflare account at https://dash.cloudflare.com (no card).
+2. **Workers & Pages → Create → Worker** → name it `ror-mod-proxy` → **Edit
+   code** → replace the default code with the contents of
+   [`cloudflare-worker/worker.js`](cloudflare-worker/worker.js) → **Deploy**.
+3. Copy your worker's URL (``https://ror-mod-proxy.<subdomain>.workers.dev``)
+   and test it instantly without pushing:
+   ``https://meeladprolabs.github.io/Rigs-Of-Rods-InBrowser/web/repo.html?proxy=https://ror-mod-proxy.<subdomain>.workers.dev``
+4. To make it permanent, paste the same URL as the `MY_PROXY` value at the top
+   of `web/repo.html` and push.
+
+Optional — deploy the Worker from this repo instead of the dashboard:
+
+1. GitHub repo → **Settings → Secrets and variables → Actions** → add
+   `CLOUDFLARE_API_TOKEN` (Cloudflare dashboard → My Profile → API Tokens →
+   Create Token → *Edit Cloudflare Workers* template) and `CLOUDFLARE_ACCOUNT_ID`
+   (Cloudflare dashboard → right sidebar).
+2. **Actions** tab → **Deploy mod proxy worker** → **Run workflow**.
+   (It's manual by design so it never fails CI until the secrets are added;
+   uncomment the `push:` block in
+   [`.github/workflows/worker-deploy.yml`](.github/workflows/worker-deploy.yml)
+   to deploy on every push.)
 
 ## Building from source
 

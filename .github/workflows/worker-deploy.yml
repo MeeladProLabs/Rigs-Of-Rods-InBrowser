@@ -1,0 +1,28 @@
+# Deploys the mod-download proxy to Cloudflare Workers from this repo.
+#
+# Manual trigger (Actions tab -> "Deploy mod proxy worker" -> Run workflow)
+# so it never fails CI until you've added the two secrets:
+#   - CLOUDFLARE_API_TOKEN   (Cloudflare dashboard -> My Profile -> API Tokens
+#                             -> Create Token -> "Edit Cloudflare Workers" template)
+#   - CLOUDFLARE_ACCOUNT_ID  (Cloudflare dashboard -> right sidebar -> Account ID)
+#
+# After secrets are set, you can also switch on: true to deploy on every push.
+name: Deploy mod proxy worker
+
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+  #   paths: ['cloudflare-worker/**']
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare-worker

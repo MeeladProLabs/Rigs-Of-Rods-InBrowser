@@ -1,0 +1,7 @@
+name = "ror-mod-proxy"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+
+# Free tier, no credit card required.
+# After deploying once via the dashboard or CLI, the live URL is:
+#   https://ror-mod-proxy.<your-subdomain>.workers.dev
